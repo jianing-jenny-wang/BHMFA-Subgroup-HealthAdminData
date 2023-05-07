@@ -1,0 +1,592 @@
+---
+title: "Simulation-GenerateCorrData"
+author: "Jianing Wang"
+date: "2023-05-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+
+```{r packages and functions, include = FALSE, result = 'hide'}
+if (!require("dplyr")) install.packages("dplyr") else (require("dplyr", quietly = TRUE)) 
+if (!require("reshape2")) install.packages("reshape2") else (require("reshape2", quietly = TRUE)) 
+if (!require("stringr")) install.packages("stringr") else (require("stringr", quietly = TRUE)) 
+if (!require("ggplot2")) install.packages("ggplot2") else (require("ggplot2", quietly = TRUE)) 
+if (!require("LaplacesDemon")) install.packages("LaplacesDemon") else (require("LaplacesDemon", quietly = TRUE)) 
+if (!require("miceadds")) install.packages("miceadds") else (require("miceadds", quietly = TRUE)) 
+if (!require("corrplot")) install.packages("corrplot") else (require("corrplot", quietly = TRUE)) 
+library(corrplot)
+
+## Path to functions
+path_to_funcs <- ".../Simulation/"
+source(paste(path_to_funcs, "data_simu_functions.r", sep = ""))
+
+
+## Population and other demographic data for data generation
+path_to_input <- ".../Simulation/GenDt/"
+
+```
+
+## Introduction
+
+This piece of work simulate data from the Generalized CorrBHMFA Model
+
+## Model 
+
+1. Detection probability model:
+
+With individual heterogeneity but only 1 latent factor
+
+$$
+Y_{ijg}|z_{ig} = 1 \sim \text{Bern}(p_{ijg}) \\
+Y_{ijg}|z_{ig} = 0 \sim \delta(0) \\
+\text{logit}(p_{ijg}) =  \mu_{jg} + \boldsymbol{\alpha_{j}\theta_{i}}\\
+
+\text{where i = 1...I, j = 1...J, g = 1...G} 
+$$
+
+where the $\boldsymbol{\theta_{i}}$ is a vector of length D: $\boldsymbol{\theta_{i}} = (\theta_{i1},...,\theta_{iD})$, each element of the vector indicates a latent factor representing individual heterogeneity or other unmeasurable factors that impact the behavior of being detected by interrelated lists. $\boldsymbol{\alpha}$ is a factor loading matrix with J rows and D columns, each element of the matrix $\alpha_{jd}$ represents the coefficient (correlation) between latent factors and the response j.
+
+$\boldsymbol{\theta_{i}}$:
+
+We focus on an univariate latent variable ($D=1$) in this case. The latent variable $\theta_{i} \sim N(0,100)$, fixed variance parameter helps identify the $\boldsymbol{\alpha}_{j}$.
+
+$\mu_{jg}$:
+
+1.1 Model $\mu_{jg}$ independent effects across groups: $\mu_{jg} \sim N(0,100)$
+
+1.2 Model $\mu_{jg}$ homogeneous effects across groups: $\mu_{jg} = \mu_{j} \sim N(0,100)$
+
+1.3 Model $\mu_{jg}$ has random effects across groups: $\mu_{jg} \sim N(\mu_{j},\sigma^{2}_{\mu})$
+
+Hyperpriors:
+
+$\mu_{j} \sim N(0,100)$ for mean of $\mu_{jg}$
+
+$\sigma^{2}_{\mu} \sim \text{Half-Cauchy}(\mu_{\mu} = 0, \gamma_{\mu} = 10)$, scale is $10$
+
+$\alpha_{j,d} \sim N(0,100)$
+
+2. Prevalence model:
+
+The group-specific prevalence are generated from the following model: 
+
+$$
+z_{ig} \sim \text{Bern}(\lambda_{g})\\
+\text{Therefore,  }N_{g} = \sum_{i_{g}=1}^{I_{g}} z_{ig} \sim \text{Bin}(M_{g}, \lambda_{g})
+$$
+
+where $N_{g}$ and $\lambda_{g}$ are the number of sub-group $g^{th}$ population size and prevalence, respectively. For computational convenience, a down-scaled size of the population size $M_{g}$ can be used with an additional pre-defined factor $p_{ub}$ that indicates the effective upper limit of the prevalence regardless of the groups, say $p_{ub}=0.3$. In this case, $\lambda_{g}$ is then proportionally incresed by $p_{ub}$ times.
+
+Hyperprior:
+
+$\lambda_{g} \sim U(0,1)$
+
+### Basic setup:
+
+#### Number of data sources 
+
+J = 3
+
+#### Number of sub-groups
+
+Subgroups use Race/Ethnicity group in MA (G = 4)
+
+#### General population sizes
+
+General population size by subgroups is set up proportional to the real residents size in MA
+
+Race/Ethinicity in MA (2019) 
+White_NonH = 3180122
+Black_NonH = 218580
+Other_NonH = 415949
+Hispanic = 552119
+Total = 4476770
+
+-- I rescale all of these by dividing by a fixed scale value, so that the size is only around 1/scale of the real data size --
+
+#### Group-specific prevalence $\lambda_{g}$
+
+Scenario 1: All groups have the same prevalence at 0.05 (5%)
+
+Scenario 2: Large prevalence groups have lower detection probabilities
+This scenario reflects the bias in the data recording/surveillance for those groups that have worse situations, such as black/hispanic.
+
+When G = 4
+Prev of groups = (0.05, 0.09, 0.01, 0.09), referring to white-nH, black-nH, other-nH, Hispanic. Black-nH and Hispanic are two worse groups.
+
+#### Detection probabilities
+
+We generate data from the correlated two-stage BHM-FA model using the following input values:
+
+mean of $\text{logit}^{-1}(\vec{\mu}) = 0.4, 0.2, 0.1$ for $J = 3$
+
+variance has two scenarios:
+
+Scenario 1 (stronger sub-groups correlation): $\sigma_{\mu} = 0.1$ refers to insignificant difference between groups
+
+Scenario 2 (divergent sub-groups effect):  $\sigma_{\mu} = 0.4$ refers to significant difference between groups
+
+We draw the values for $G$ grous across $J$ lists and fixed them across 100 simulations.
+
+The drawn values for $\mu_{jg}$ are:
+
+```{r Draw mu_jg}
+
+summary(invlogit(rnorm(1000, mean = logit(0.4), sd = 0.1)))
+summary(invlogit(rnorm(1000, mean = logit(0.2), sd = 0.1)))
+summary(invlogit(rnorm(1000, mean = logit(0.1), sd = 0.1)))
+summary(invlogit(rnorm(1000, mean = logit(0.4), sd = 0.4)))
+summary(invlogit(rnorm(1000, mean = logit(0.2), sd = 0.4)))
+summary(invlogit(rnorm(1000, mean = logit(0.1), sd = 0.4)))
+
+## Small Variance = strong correlation
+set.seed(412)
+mu_val_0.4_0.1 <- invlogit(rnorm(10000, mean = logit(0.4), sd = 0.1))
+samp_grp4_0.4_0.1 <- sample(mu_val_0.4_0.1, size = 4, replace= FALSE)
+mu_val_0.2_0.1 <-  invlogit(rnorm(10000, mean = logit(0.2), sd = 0.1))
+samp_grp4_0.2_0.1 <- sample(mu_val_0.2_0.1, size = 4, replace= FALSE)
+mu_val_0.1_0.1 <-  invlogit(rnorm(10000, mean = logit(0.1), sd = 0.1))
+samp_grp4_0.1_0.1 <- sample(mu_val_0.1_0.1, size = 4, replace= FALSE)
+samp_mu_jg_small_var <- rbind(round(samp_grp4_0.4_0.1,2),
+                              round(samp_grp4_0.2_0.1,2),
+                              round(samp_grp4_0.1_0.1,2))
+colnames(samp_mu_jg_small_var) <- seq(1,4) #G
+rownames(samp_mu_jg_small_var) <- seq(1,3) #J
+samp_mu_jg_small_var
+#         1    2    3    4
+# [1,] 0.46 0.43 0.41 0.37
+# [2,] 0.19 0.18 0.21 0.20
+# [3,] 0.11 0.09 0.11 0.10
+## Large Variance = weak correlation
+set.seed(412)
+mu_val_0.4_0.4 <- invlogit(rnorm(10000, mean = logit(0.4), sd = 0.4))
+samp_grp4_0.4_0.4 <- sample(mu_val_0.4_0.4, size = 4, replace= FALSE)
+mu_val_0.2_0.4 <-  invlogit(rnorm(10000, mean = logit(0.2), sd = 0.4))
+samp_grp4_0.2_0.4 <- sample(mu_val_0.2_0.4, size = 4, replace= FALSE)
+mu_val_0.1_0.4 <-  invlogit(rnorm(10000, mean = logit(0.1), sd = 0.4))
+samp_grp4_0.1_0.4 <- sample(mu_val_0.1_0.4, size = 4, replace= FALSE)
+
+samp_mu_jg_large_var <- rbind(round(samp_grp4_0.4_0.4,2),
+                              round(samp_grp4_0.2_0.4,2),
+                              round(samp_grp4_0.1_0.4,2))
+colnames(samp_mu_jg_large_var) <- seq(1,4) #G
+rownames(samp_mu_jg_large_var) <- seq(1,3) #J
+samp_mu_jg_large_var
+#      [,1] [,2] [,3] [,4]
+# [1,] 0.63 0.50 0.45 0.27
+# [2,] 0.16 0.12 0.26 0.19
+# [3,] 0.14 0.06 0.12 0.09
+```
+
+
+#### Individual Heterogeneity Latent Factor
+
+1.1 Univariate latent factor is length of 1 ($D=1$). For $\boldsymbol{\theta_{i}}$, 
+
+Random the $\boldsymbol{\theta_{i}}$ and generate from univariate normal distribution with fixed mean vector, and fixed variance.
+
+$$
+\theta_{i} \sim N(\text{logit}(0.5) = 0,0.1^{2}) \\
+$$
+
+1.2 Two latent factors ($\boldsymbol{\theta_{i}}$) is length of 2 ($D=2$)). For $\boldsymbol{\theta_{i}}$, 
+
+Random the $\boldsymbol{\theta_{i}}$ and generate from multivariate normal distribution with fixed mean vector, and fixed v-cov matrix.
+
+$$
+\theta_{i} \sim 
+\text{MVN}(\mu_{\theta_{i}} = (\text{logit}(0.5), \text{logit}(0.5)), \\
+\Sigma_{\theta_{i}} = 
+\begin{bmatrix}
+\sigma^{2}_{\theta^{d=1}}= 0.1^{2} & \sigma_{\theta^{d=1}}*\sigma_{\theta^{d=2}}*\rho_{\boldsymbol{\theta}} = 0.1*0.1*0.5 \\
+0.1*0.1*0.5 & \sigma^{2}_{\theta^{d=2}} = 0.1^{2} \\
+\end{bmatrix} 
+)
+$$ 
+
+Here, the mean of $\theta_{i}$ corresponds to (0.5,0.5) probability of being detected, correlation between two latent factors is $\rho_{\boldsymbol{\theta}} = 0.5$, each latent factor has standard deviation to be $\sigma_{\theta^{d}} = 0.1$.
+
+#### Factor Loading Matrix
+
+Background: In typical factor analysis, the factors that affect the actual detection probability differently depending on the factor loadings setup. Factor loadings are similar to correlation coefficients in that they can vary from -1 to 1. The closer factors are to -1 or 1, the more they affect the variable. A factor loading of zero would indicate no effect.
+
+1. $\boldsymbol{\alpha}$ is a J*D dimensional matrix, when D=1 or J=1, it becomes a vertical/horizontal vector. In this simulation, D = 2. 
+
+Restriction: If it is a matrix, then in order to identify the model, the cells when j<d should be fixed at 0 and for each column of alpha matrix should have one cell fixed at 1. 
+
+1.1 When D = 1
+
+In the case when D = 1, there is no need to impose 0 to any of the element in the loading matrix.
+
+I fix the scale of latent factor for the middle lists' to be $\alpha_{jd}=1$, i.e. when J = 3, the $\alpha_{2,1} = 1$, when J = 5, the $\alpha_{3,1} = 1$. For other free parameters when $j\neq\text{middle list}$, we fix $\alpha_{j,1} = 1$, meaning netural impact the catchability; otherwise if $\alpha_{j,1} < 0$ it means negative impact on the catchabilty.
+
+Here we assume a same factor loadings
+
+<!-- Reference: T1.1S4N5 Xinming An (2013) Stats in Med, A latent factor linear mixed model -->
+
+When $J = 3$,
+
+$$
+\boldsymbol{\alpha} = \begin{bmatrix}
+1 \\
+1 \\
+1 \\
+\end{bmatrix}
+$$
+
+1.2 When D > 1 (Exactly, D = 2)
+
+A simple structure is adopted to model the relationship between these items and the latent factors, which suggests that each item loads on only one of the latent factors. 
+
+Assumptions: Here, we assume that the first half (include the middle one if the number of lists (J) is odd) lists load on the first factor, and the remaining lists load on the second factor. To fix the scale of latent factor, the $\alpha_{1,D=11}$ and $\alpha_{J,D=2} are fixed to be 1. 
+
+Implication: The simple structure suggests that the last half elements of the first column and the first half (include the middle one if the number of lists (J) is odd) of the second column of the factor loading matrix $\boldsymbol{\alpha}$ will be fixed at 0, thus not allowing any factor rotation. 
+
+<!-- Reference: T1.1S4N5 A latent factor linear mixed model - see simulation section -->
+
+When $J = 3$ and $D = 2$,
+
+$$
+\boldsymbol{\alpha} = \begin{bmatrix}
+1 & 0\\
+1 & 0\\
+0 & 1 \\
+\end{bmatrix}
+$$
+
+## Generate a single dataset
+
+```{r True Values}
+### Scenarios ###
+Prev_scenarios <- "LargePrevWorseDetect" #"LargePrevWorseDetect"
+DetectProb_scenarios <- "Vary" 
+DetectProcessModel <- "CorrBHMFA" # correlated BHM-FA or only Mt model
+Samp_mu_jg <- "NormGenerate_LargeVariance" # NormGenerate_LargeVariance # normal distribution generated with small or large variance for the mu_jg (list effect)
+FactorLoadings <- "Same" # alpha
+
+### GENERAL POPULATION SIZE (P) ###
+# # Import Real P 
+realP <- read.csv(paste(path_to_input, "Population/MAPopulation_Race.csv", sep = ""))
+TotalP_val <- sum(realP$TotalGenPpl)
+# # Scale down 
+scale <- 80
+realP$ScaledPopulation <- realP$TotalGenPpl/scale
+P_val <- round(realP$ScaledPopulation,digits = 0)
+names(P_val) <- c("White-NonH", "Black-NonH", "Other-NonH", "Hispanic")
+
+### NUMBER OF THE LISTS (J) ###
+nDatasets_val <- 3
+
+### NUMBLER OF THE SUB-GROUPS (G) ###
+nSubgrps_val <- length(P_val)
+
+### Output the data ###
+if(DetectProcessModel == "CorrBHMFA"){
+  if(Prev_scenarios == "Same"){
+   if(DetectProb_scenarios == "Vary"){
+    if(nDatasets_val == 3 & nSubgrps_val == 4){
+      if(Samp_mu_jg == "NormGenerate_SmallVariance"){
+        if(FactorLoadings == "Same"){
+            save_to_where <- "GenDt/Simu1.1_SamePrev_J3G4/mu_jg_SmallVar/CorrBHMFA/"  
+        }
+      }
+      if(Samp_mu_jg == "NormGenerate_LargeVariance"){
+        if(FactorLoadings == "Same"){
+            save_to_where <- "GenDt/Simu1.1_SamePrev_J3G4/mu_jg_LargeVar/CorrBHMFA/"
+        }
+      }
+    }
+  }
+ } # End of same prevalence
+} # End of DetectProcessModel
+
+if(DetectProcessModel == "CorrBHMFA"){
+  if(Prev_scenarios == "LargePrevWorseDetect"){
+   if(DetectProb_scenarios == "Vary"){
+    if(nDatasets_val == 3 & nSubgrps_val == 4){
+      if(Samp_mu_jg == "NormGenerate_SmallVariance"){
+        if(FactorLoadings == "Same"){
+            save_to_where <- "GenDt/Simu1.2_VaryPrev_J3G4/mu_jg_SmallVar/CorrBHMFA/"
+        }
+      }
+      if(Samp_mu_jg == "NormGenerate_LargeVariance"){
+        if(FactorLoadings == "Same"){
+            save_to_where <- "GenDt/Simu1.2_VaryPrev_J3G4/mu_jg_LargeVar/CorrBHMFA/"
+        }
+      }
+    }
+  }
+ } # End of same prevalence
+} # End of DetectProcessModel
+
+
+
+### (1) ABUNDANCE MODEL ###
+# # Prevalence by groups
+if(Prev_scenarios == "Same"){
+ invlogit_lambda_g_val <- rep(0.05, nSubgrps_val) # prevalence
+}
+if(Prev_scenarios == "LargePrevWorseDetect"){
+invlogit_lambda_g_val <- c(0.05, 0.09, 0.01, 0.09)  # prevalence
+}
+lambda_g_val <- round(logit(invlogit_lambda_g_val), 3) # logit prevalence
+  
+
+### (2) DETECTION PROBABILITY MODEL ###
+# # Assign list effects mu_jg
+if(DetectProb_scenarios == "Vary" & Samp_mu_jg == "NormGenerate_SmallVariance"){
+  invlogit_mu_jg_mat_val <- samp_mu_jg_small_var %>% t()
+  mu_jg_mat_val <- as.data.frame(t(logit(invlogit_mu_jg_mat_val))) # dim = J*G
+}
+if(DetectProb_scenarios == "Vary" & Samp_mu_jg == "NormGenerate_LargeVariance"){
+  invlogit_mu_jg_mat_val <- samp_mu_jg_large_var %>% t()
+  mu_jg_mat_val <- as.data.frame(t(logit(invlogit_mu_jg_mat_val))) # dim = J*G
+}
+# # convert to list by row
+# mu_jg_ls_val <- split(mu_jg_mat_val, 1:nrow(mu_jg_mat_val)) # length 1:J
+# # convert to list by column
+mu_jg_ls_val <- as.list(mu_jg_mat_val) # length of G
+
+# # Assign interrelationship between lists (alpha theta)
+set.seed(412)
+# if(DetectProcessModel == "Mt"){
+#   n_latent_factor <- NULL
+#   theta_mean_val <- NULL
+#   theta_sd_val <- NULL
+#   theta_corr_val <- NULL
+#   alpha_val <- NULL
+#   theta_ls_val <- NULL
+# } # end of DetectProcessModel == "Mt"
+
+if(DetectProcessModel == "CorrBHMFA"){
+ RandomGeneration <- "OnlyTheta" # Both ## if generate alpha and theta randomly rather than fixed
+ n_latent_factor <- 1 # number of elements in vector of theta_i (value of the vector length D)
+ 
+if( RandomGeneration == "OnlyTheta"){
+### If there is interaction alpha_j*theta_i ###
+### If fix alpha but random theta across simulations ###
+if(n_latent_factor == 1){
+  ## theta
+  theta_mean_val <- logit(0.5)
+  theta_sd_val <- 0.1
+  theta_corr_val <- 0
+  theta_ls_val <- list()
+  theta_ls_val <-  lapply(P_val, FUN = function(x) genTheta(D = n_latent_factor, sample_size = x, theta_mean = theta_mean_val ,theta_sd = theta_sd_val, theta_corr = theta_corr_val, no_interact = FALSE))
+  ## alpha
+  if(nDatasets_val == 3 & FactorLoadings == "Same"){
+    alpha_val <- matrix(c(1,1,1), ncol = 1, nrow = nDatasets_val)  
+  }
+}
+}
+} # end of DetectProcessModel == "GenCorrBHMFA"
+
+```
+
+
+Set values:
+
+```{r TestOneSingle}
+P <- P_val
+invlogit_lambda_g <- invlogit_lambda_g_val
+nDatasets <- nDatasets_val
+mu_jg <- mu_jg_ls_val
+theta_mean <- theta_mean_val
+theta_sd <- theta_sd_val
+theta_corr <- theta_corr_val
+alpha <- alpha_val
+theta_ls <- theta_ls_val
+
+# set.seed(12345)
+```
+
+
+### GENERATE ONE SINGLE DATASET ###
+
+```{r}
+simuOneDataset <- function(P, nDatasets,
+                           invlogit_lambda_g,
+                           mu_jg, 
+                           alpha, theta_ls){ 
+## MODEL 1 (ABUNDANCE MODEL)
+G <- length(P)
+N_target <-  round(as.vector(P * invlogit_lambda_g), digits = 0) # For each group's residents, given Prev, draw number of OUD at each group # Do not use rbinom(n = G, size = P, prob = invlogit_lambda_g), this generates additional unnecessary randomness
+
+## MODEL 2 (DETECTION PROBABILITY MODEL) ###
+p_detect <- sapply(1:G, FUN = function(x) {getDetectProb(mu_jg = mu_jg[[x]], alpha = alpha, theta = theta_ls[[x]], n_target = N_target[x])}) # list of all locations, each element dim = N_target[x] * n_lists
+
+## Draw detection histories for all target population
+yfull <- lapply(p_detect, FUN = genYfull) # yfull a list = dim(p_detect), detection history across lists and locations
+## Make dataset with yfull
+YfullTable <- makeYfullTable(yfull) # dim = sum(N_target) * J
+
+## Make dataset with observed
+# By group
+yObs_by_grp_final <- aggregate(YfullTable$obs_label, by=list(grp=YfullTable$grp_label), FUN=sum)
+colnames(yObs_by_grp_final) <- c("grp", "n_obs")
+
+# By list and group
+if(nDatasets == 3){
+yObs_by_list_grp_final <- data.frame(grp = aggregate(YfullTable$X1, list(YfullTable$grp_label), FUN=sum)[,1],
+                               n_obs_X1 = aggregate(YfullTable$X1, list(YfullTable$grp_label), FUN=sum)[,2],
+                               n_obs_X2 = aggregate(YfullTable$X2, list(YfullTable$grp_label), FUN=sum)[,2],
+                               n_obs_X3 = aggregate(YfullTable$X3, list(YfullTable$grp_label), FUN=sum)[,2])
+
+yObs_by_list_final <- colSums(yObs_by_list_grp_final[,2:(nDatasets+1)])
+}
+if(nDatasets == 5){
+yObs_by_list_grp_final <- data.frame(grp = aggregate(YfullTable$X1, list(YfullTable$grp_label), FUN=sum)[,1],
+                               n_obs_X1 = aggregate(YfullTable$X1, list(YfullTable$grp_label), FUN=sum)[,2],
+                               n_obs_X2 = aggregate(YfullTable$X2, list(YfullTable$grp_label), FUN=sum)[,2],
+                               n_obs_X3 = aggregate(YfullTable$X3, list(YfullTable$grp_label), FUN=sum)[,2],
+                               n_obs_X4 = aggregate(YfullTable$X4, list(YfullTable$grp_label), FUN=sum)[,2],
+                               n_obs_X5 = aggregate(YfullTable$X5, list(YfullTable$grp_label), FUN=sum)[,2])
+
+yObs_by_list_final <- colSums(yObs_by_list_grp_final[,2:(nDatasets+1)])
+}
+
+
+# By list contingency table
+if(nDatasets == 3){
+empty_grid_list <- expand.grid(X1 = c(0,1), X2 = c(0,1), X3 = c(0,1)) # X1=List1
+ContingencyTbObs_by_list <- aggregate(YfullTable$obs_label, by=list(X1 = YfullTable$X1,
+                                                        X2 = YfullTable$X2,
+                                                        X3 = YfullTable$X3), FUN=sum)
+# Get complete yObs table by list and location
+ContingencyTbObs_by_list_final <- merge(x = empty_grid_list, y = ContingencyTbObs_by_list, by.x = c("X1","X2","X3"),
+                          by.y = c("X1","X2","X3"), 
+                          all.x = TRUE)
+}
+if(nDatasets == 5){
+empty_grid_list <- expand.grid(X1 = c(0,1), X2 = c(0,1), X3 = c(0,1), List4 = c(0,1), List5 = c(0,1)) # X1=List1
+ContingencyTbObs_by_list <- aggregate(YfullTable$obs_label, by=list(X1 = YfullTable$X1,
+                                                        X2 = YfullTable$X2,
+                                                        X3 = YfullTable$X3,
+                                                        List4 = YfullTable$X4,
+                                                        List5 = YfullTable$X5), FUN=sum)
+# Get complete yObs table by list and location
+ContingencyTbObs_by_list_final <- merge(x = empty_grid_list, y = ContingencyTbObs_by_list, by.x = c("X1","X2","X3","List4","List5"),
+                          by.y = c("X1","X2","X3","List4","List5"), 
+                          all.x = TRUE)
+}
+# Refill 0
+ContingencyTbObs_by_list_final$x <- ifelse(is.na(ContingencyTbObs_by_list_final$x), 0, ContingencyTbObs_by_list_final$x)
+colnames(ContingencyTbObs_by_list_final)[ncol(ContingencyTbObs_by_list_final)] <- "n_obs"
+
+# Get effective PDetect from the generated data (empirical)
+yPDetect_by_list_grp_final <- yObs_by_list_grp_final[,2:(nDatasets+1)]/matrix(rep(N_target, nDatasets),byrow = FALSE, nrow = length(N_target), ncol = nDatasets)
+colnames(yPDetect_by_list_grp_final) <- gsub("n_obs_", "PDetect_", colnames(yPDetect_by_list_grp_final))
+
+DataInfoList <- list(YfullTable = YfullTable, # table of all Target population, including unobserved
+                     N_target = N_target, # N target at each G
+                     Prev = invlogit_lambda_g, # prevalence at each G
+                     P = P, # general size of population at each G
+                     G = length(P), # number of groups
+                     J = nDatasets, # number of lists
+                     mu_jg = do.call(rbind,mu_jg), # logit lists' effect 
+                     PDetect_by_list_grp = yPDetect_by_list_grp_final, # computed J's detection probability in generated data by group
+                     yObs_by_grp = yObs_by_grp_final, # count n_ob by location k in generated data
+                     yObs_by_list_grp = yObs_by_list_grp_final, # count n_ob by nrows = K and ncol = J in generated data
+                     yObs_by_list = yObs_by_list_final, # count n_obs by list j in generated data
+                     ContingencyTbObs_by_list = ContingencyTbObs_by_list_final # contingency table by list in generated data
+                     )
+
+return(DataInfoList)
+} # Generate a single observed dataset
+
+```
+
+
+Check the generated data for one simulation.
+
+```{r CheckGenTarget}
+
+#####  Check prevalence/N_target is matching the designed groups' prevalence ##### 
+DataInfoList$N_target
+DataInfoList$N_target/P
+mean(DataInfoList$N_target/P); sd(DataInfoList$N_target/P)
+## Check yfull (target people) is accurately summarized ##
+colSums(YfullTable)[4] == sum(DataInfoList$N_target)
+
+## Compute for each of group g, if the prevalence = actual labeled target ##
+n_target_by_group <- YfullTable %>% group_by(grp_label) %>% 
+  summarise(sum_target = sum(target_label),
+            .groups = 'drop')
+n_target_by_group$sum_target/DataInfoList$N_target
+
+##### Detection probability #####
+n_target_by_grp  <- sapply(1:G, FUN = function(x) dim(p_detect[[x]]))
+ratio_n_target_by_grp  <- n_target_by_grp [1,]/DataInfoList$N_target #supposed to be 1 for all G
+
+##### Check if detection prob = designed detection prob by list and group #####
+yPDetect_by_list_grp_final/invlogit(do.call(rbind,mu_jg))
+
+```
+
+## Simulation data
+```{r}
+### Simulation set up ###
+nsim <- 100
+set.seed(1)
+rand_seeds <- sample(1:9999999, size = nsim, replace = FALSE)
+### Save the simulation ###
+dtYfullTable_all_simu <- list() 
+dtNtarget_all_simu <- list()
+dtPprev_all_simu <- list()
+dtPDetect_by_list_grp_all_simu <- list()
+dtyObs_by_grp_all_simu <- list()
+dtyObs_by_list_grp_all_simu <- list()
+dtyObs_by_list_all_simu <- list()
+ContingencyTbObs_by_list_all_simu <- list()
+
+for(isim in 1:nsim){
+  set.seed(rand_seeds[isim])
+  
+  dt_one_simu <- simuOneDataset(P = P_val, nDatasets = nDatasets_val, 
+                               invlogit_lambda_g = invlogit_lambda_g_val,
+                               mu_jg = mu_jg_ls_val,
+                               alpha = alpha_val, theta_ls = theta_ls_val)
+  # Save
+  dtYfullTable_all_simu[[isim]] <- dt_one_simu$YfullTable # dim = sum of N_targets * (J+3)
+  dtNtarget_all_simu[[isim]] <- dt_one_simu$N_target # vec
+  dtPprev_all_simu[[isim]] <- dt_one_simu$Prev # vec
+  dtPDetect_by_list_grp_all_simu[[isim]] <- dt_one_simu$PDetect_by_list_grp # mat
+  dtyObs_by_grp_all_simu[[isim]] <- dt_one_simu$yObs_by_grp  # data.frame 
+  dtyObs_by_list_grp_all_simu[[isim]] <- dt_one_simu$yObs_by_list_grp  # data.frame G*J
+  dtyObs_by_list_all_simu[[isim]] <- dt_one_simu$yObs_by_list # vec J
+  ContingencyTbObs_by_list_all_simu[[isim]] <- dt_one_simu$ContingencyTbObs_by_list # data.frame J permutation contingency table
+  
+    # Catch which simulation may get error and stop
+  print(paste("simulation ",isim, sep = ""))
+}
+
+## Save basic setup
+BasicSetUp = list(names_of_g = names(P_val),
+                  P = P_val,
+                  G = length(P_val),
+                  J = nDatasets_val,
+                  invlogit_lambda_g = invlogit_lambda_g_val, # prevalence by group length of G
+                  invlogit_mu_jg_mat = t(invlogit_mu_jg_mat_val), # detection probabilities matrix J*G
+                  mu_jg = do.call(rbind,mu_jg_ls_val), # logit detection probabilities matrix J*G
+                  D = n_latent_factor,
+                  theta_mean = theta_mean_val,
+                  theta_sd = theta_sd_val,
+                  theta_ls = theta_ls_val,
+                  theta_corr = theta_corr_val,
+                  alpha = alpha_val)
+saveRDS(BasicSetUp, paste0(save_to_where,"BasicSetUp.RData"))
+
+## Save each simulated data ##
+for(i in 1:nsim){
+  saveRDS(dtYfullTable_all_simu[[i]], file= paste0(save_to_where,"dtYfullTable_simu", i, ".RData"))
+  saveRDS(dtNtarget_all_simu[[i]], file= paste0(save_to_where,"dtNtarget_simu", i, ".RData"))
+  saveRDS(dtPprev_all_simu[[i]], file= paste0(save_to_where,"dtPprev_simu", i, ".RData"))
+  saveRDS(dtPDetect_by_list_grp_all_simu[[i]], file= paste0(save_to_where,"dtPDetect_by_list_grp_simu", i, ".RData"))
+  saveRDS(dtyObs_by_grp_all_simu[[i]], file= paste0(save_to_where,"dtyObs_by_grp_simu", i, ".RData"))
+  saveRDS(dtyObs_by_list_grp_all_simu[[i]], file= paste0(save_to_where,"dtyObs_by_list_grp_simu", i, ".RData"))
+  saveRDS(dtyObs_by_list_all_simu[[i]], file= paste0(save_to_where,"dtyObs_by_list_all_simu", i, ".RData"))
+  saveRDS(ContingencyTbObs_by_list_all_simu[[i]], file= paste0(save_to_where,"ContingencyTbObs_by_list_all_simu", i, ".RData"))
+}
+```
