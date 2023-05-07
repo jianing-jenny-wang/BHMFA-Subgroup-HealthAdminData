@@ -1,0 +1,710 @@
+---
+title: "Simulation-PostProcess"
+author: "Jianing Wang"
+date: '2023-05-05'
+output: html_document
+---
+
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+# Scenarios
+
+```{r packages and functions, include = FALSE, result = 'hide'}
+
+if (!require("dplyr")) install.packages("dplyr") else (require("dplyr", quietly = TRUE)) 
+if (!require("reshape2")) install.packages("reshape2") else (require("reshape2", quietly = TRUE)) 
+if (!require("stringr")) install.packages("stringr") else (require("stringr", quietly = TRUE)) 
+if (!require("data.table")) install.packages("data.table") else (require("data.table", quietly = TRUE)) 
+if (!require("coda")) install.packages("coda") else (require("coda", quietly = TRUE)) 
+if (!require("bayesplot")) install.packages("bayesplot") else (require("bayesplot", quietly = TRUE)) 
+if (!require("LaplacesDemon")) install.packages("LaplacesDemon") else (require("LaplacesDemon", quietly = TRUE)) 
+if (!require("ggmcmc")) install.packages("ggmcmc") else (require("ggmcmc", quietly = TRUE)) 
+```
+
+
+```{r Scenarios}
+#### Choose the Scenario ####
+scenario <- 1.2 # 1.1 or 1.2
+
+## If including or excluding the extremely small data source (large variance will include small list)
+Large_Variance_PDetect <- "Large" # Large # Small
+
+if(scenario == 1.1){
+  Prevalence_scenario <- "SamePrev" 
+  case <- paste("Simu", scenario, "_", Prevalence_scenario, "_", Large_Variance_PDetect, "Var", "_CorrBHMFA", sep = "")
+}else{
+  Prevalence_scenario <- "VaryPrev" 
+  case <- paste("Simu", scenario, "_", Prevalence_scenario, "_", Large_Variance_PDetect, "Var", "_CorrBHMFA", sep = "")
+}
+
+models <- "Homo" # corr Ind Homo
+
+J <- 3
+G <- 4
+
+#### Run with R-intel ####
+run_with_intel <- "yes" 
+
+#### Parallel the Chains ####
+parallel_run <- "yes"
+
+```
+
+```{r Path to data/output and functions}
+
+#### Set Working Directory ####
+if(case == "Simu1.1_SamePrev_SmallVar_CorrBHMFA"){
+  BasicSetup <- readRDS(".../Simulation/GenDt/Simu1.1_SamePrev_J3G4/mu_jg_SmallVar/CorrBHMFA/BasicSetUp.RData")
+  ## Output the summary statistics ##
+  path_to_output <- ".../Simulation/Summary_MCMC_Out/Simu1.1_SamePrev_J3G4/mu_jg_SmallVar/CorrBHMFA/"
+  ## Input the results from MCMC runs ##
+  path_to_input <- ".../Simulation/MCMC_Out/Simu1.1_SamePrev_J3G4/mu_jg_SmallVar/CorrBHMFA/"
+}
+if(case == "Simu1.1_SamePrev_LargeVar_CorrBHMFA"){
+    BasicSetup <- readRDS(".../Simulation/GenDt/Simu1.1_SamePrev_J3G4/mu_jg_LargeVar/CorrBHMFA/BasicSetUp.RData")
+  path_to_output <- ".../Simulation/Summary_MCMC_Out/Simu1.1_SamePrev_J3G4/mu_jg_LargeVar/CorrBHMFA/"
+  path_to_input <- ".../Simulation/MCMC_Out/Simu1.1_SamePrev_J3G4/mu_jg_LargeVar/CorrBHMFA/"
+}
+if(case == "Simu1.1_SamePrev_SmallVar_HomoBHMFA"){
+    BasicSetup <- readRDS(".../Simulation/GenDt/Simu1.1_SamePrev_J3G4/mu_jg_SmallVar/CorrBHMFA/BasicSetUp.RData")
+  path_to_output <- ".../Simulation/Summary_MCMC_Out/Simu1.1_VaryPrev_J3G4/mu_jg_SmallVar/HomoBHMFA/"
+  path_to_input <- ".../Simulation/MCMC_Out/Simu1.1_SamePrev_J3G4/mu_jg_SmallVar/HomoBHMFA/"
+}
+if(case == "Simu1.1_SamePrev_LargeVar_HomoBHMFA"){
+    BasicSetup <- readRDS(".../Simulation/GenDt/Simu1.1_SamePrev_J3G4/mu_jg_LargeVar/CorrBHMFA/BasicSetUp.RData")
+  path_to_output <- ".../Simulation/Summary_MCMC_Out/Simu1.1_VaryPrev_J3G4/mu_jg_LargeVar/HomoBHMFA/"
+  path_to_input <- ".../Simulation/MCMC_Out/Simu1.1_SamePrev_J3G4/mu_jg_LargeVar/HomoBHMFA/"
+}
+if(case == "Simu1.1_SamePrev_SmallVar_IndBHMFA"){
+    BasicSetup <- readRDS(".../Simulation/GenDt/Simu1.1_SamePrev_J3G4/mu_jg_SmallVar/CorrBHMFA/BasicSetUp.RData")
+  path_to_output <- ".../Simulation/Summary_MCMC_Out/Simu1.1_VaryPrev_J3G4/mu_jg_SmallVar/IndBHMFA/"
+  path_to_input <- ".../Simulation/MCMC_Out/Simu1.1_SamePrev_J3G4/mu_jg_SmallVar/IndBHMFA/"
+}
+if(case == "Simu1.1_SamePrev_LargeVar_IndBHMFA"){
+    BasicSetup <- readRDS(".../Simulation/GenDt/Simu1.1_SamePrev_J3G4/mu_jg_LargeVar/CorrBHMFA/BasicSetUp.RData")
+  path_to_output <- ".../Simulation/Summary_MCMC_Out/Simu1.1_VaryPrev_J3G4/mu_jg_LargeVar/IndBHMFA/"
+  path_to_input <- ".../Simulation/MCMC_Out/Simu1.1_SamePrev_J3G4/mu_jg_LargeVar/IndBHMFA/"
+}
+if(case == "Simu1.2_VaryPrev_SmallVar_CorrBHMFA"){
+    BasicSetup <- readRDS(".../Simulation/GenDt/Simu1.2_VaryPrev_J3G4/mu_jg_SmallVar/CorrBHMFA/BasicSetUp.RData")
+  path_to_output <- ".../Simulation/Summary_MCMC_Out/Simu1.1_VaryPrev_J3G4/mu_jg_SmallVar/CorrBHMFA/"
+  path_to_input <- ".../Simulation/MCMC_Out/Simu1.2_VaryPrev_J3G4/mu_jg_SmallVar/CorrBHMFA/"
+}
+if(case == "Simu1.2_VaryPrev_LargeVar_CorrBHMFA"){
+  # import the true value from the data generation
+  BasicSetup <- readRDS(".../Simulation/GenDt/Simu1.2_VaryPrev_J3G4/mu_jg_LargeVar/CorrBHMFA/BasicSetUp.RData")
+  path_to_output <- ".../Simulation/Summary_MCMC_Out/Simu1.1_VaryPrev_J3G4/mu_jg_LargeVar/CorrBHMFA/"
+  path_to_input <- ".../Simulation/MCMC_Out/Simu1.2_VaryPrev_J3G4/mu_jg_LargeVar/CorrBHMFA/"
+}
+if(case == "Simu1.2_VaryPrev_SmallVar_HomoBHMFA"){
+    BasicSetup <- readRDS(".../Simulation/GenDt/Simu1.2_VaryPrev_J3G4/mu_jg_SmallVar/CorrBHMFA/BasicSetUp.RData")
+  path_to_output <- ".../Simulation/Summary_MCMC_Out/Simu1.1_VaryPrev_J3G4/mu_jg_SmallVar/HomoBHMFA/"
+  path_to_input <- ".../Simulation/MCMC_Out/Simu1.2_VaryPrev_J3G4/mu_jg_SmallVar/HomoBHMFA/"
+}
+if(case == "Simu1.2_VaryPrev_LargeVar_HomoBHMFA"){
+  BasicSetup <- readRDS(".../Simulation/GenDt/Simu1.2_VaryPrev_J3G4/mu_jg_LargeVar/CorrBHMFA/BasicSetUp.RData")
+  path_to_output <- ".../Simulation/Summary_MCMC_Out/Simu1.1_VaryPrev_J3G4/mu_jg_LargeVar/HomoBHMFA/"
+  path_to_input <- ".../Simulation/MCMC_Out/Simu1.2_VaryPrev_J3G4/mu_jg_LargeVar/HomoBHMFA/"
+}
+if(case == "Simu1.2_VaryPrev_SmallVar_IndBHMFA"){
+  BasicSetup <- readRDS(".../Simulation/GenDt/Simu1.2_VaryPrev_J3G4/mu_jg_SmallVar/CorrBHMFA/BasicSetUp.RData")
+  path_to_output <- ".../Simulation/Summary_MCMC_Out/Simu1.1_VaryPrev_J3G4/mu_jg_SmallVar/IndBHMFA/"
+  path_to_input <- ".../Simulation/MCMC_Out/Simu1.2_VaryPrev_J3G4/mu_jg_SmallVar/IndBHMFA/"
+}
+if(case == "Simu1.2_VaryPrev_LargeVar_IndBHMFA"){
+  BasicSetup <- readRDS(".../Simulation/GenDt/Simu1.2_VaryPrev_J3G4/mu_jg_LargeVar/CorrBHMFA/BasicSetUp.RData")
+  path_to_output <- ".../Simulation/Summary_MCMC_Out/Simu1.1_VaryPrev_J3G4/mu_jg_LargeVar/IndBHMFA/"
+  path_to_input <- ".../Simulation/MCMC_Out/Simu1.2_VaryPrev_J3G4/mu_jg_LargeVar/IndBHMFA/"
+}
+path_to_funcs <- ".../Simulation/Functions/"
+
+#### Load functions ####
+source(paste0(path_to_funcs, "postprocess_functions.r"))
+source(paste0(path_to_funcs, "modelfit_functions.r"))
+
+```
+
+# Simulation results
+
+## Simulation configuration
+
+```{r Read data}
+#################
+### Read Data ###
+#################
+samples_Mod <- list.files(path = path_to_input, pattern = paste('mcmc.out_',models, 'BHMFA_samples_(simu\\d+).Rdata$', sep = ""))
+nsim <- length(samples_Mod)
+samples_Mod_list <- lapply(samples_Mod, function (x) readRDS(paste(path_to_input,x,sep = "")))
+
+combodt_samp_N <- list.files(path = path_to_input, pattern = paste('mcmc.out_',models, 'BHMFA_N_(simu\\d+).Rdata$', sep = ""))
+combodt_samp_N_list <- lapply(combodt_samp_N, function (x) readRDS(paste(path_to_input,x,sep = "")))
+
+combodt_samp_prev <- list.files(path = path_to_input, pattern = paste('mcmc.out_', models, 'BHMFA_prev_(simu\\d+).Rdata$', sep = ""))
+combodt_samp_prev_list <- lapply(combodt_samp_prev, function (x) readRDS(paste(path_to_input,x,sep = "")))
+
+if(models == "Homo"){
+  combodt_samp_mu_jg <- list.files(path = path_to_input, pattern = paste('mcmc.out_', models, 'BHMFA_mu_j_(simu\\d+).Rdata$', sep = ""))
+  combodt_samp_mu_jg_list <- lapply(combodt_samp_mu_jg, function (x) readRDS(paste(path_to_input,x,sep = "")))
+  
+}else{
+  combodt_samp_mu_jg <- list.files(path = path_to_input, pattern = paste('mcmc.out_', models, 'BHMFA_mu_jg_(simu\\d+).Rdata$', sep = ""))
+  combodt_samp_mu_jg_list <- lapply(combodt_samp_mu_jg, function (x) readRDS(paste(path_to_input,x,sep = "")))
+}
+
+combodt_samp_loadings <- list.files(path = path_to_input, pattern = paste('mcmc.out_', models, 'BHMFA_loadings_(simu\\d+).Rdata$', sep = ""))
+combodt_samp_loadings_list <- lapply(combodt_samp_loadings, function (x) readRDS(paste(path_to_input,x,sep = "")))
+
+combodt_samp_loadings <- list.files(path = path_to_input, pattern = paste('mcmc.out_', models, 'BHMFA_loadings_(simu\\d+).Rdata$', sep = ""))
+combodt_samp_loadings_list <- lapply(combodt_samp_loadings, function (x) readRDS(paste(path_to_input,x,sep = "")))
+
+if(models == "corr"){
+combodt_samp_sigma_mu <- list.files(path = path_to_input, pattern = paste('mcmc.out_', models, 'BHMFA_sigma_mu_(simu\\d+).Rdata$', sep = ""))
+combodt_samp_sigma_mu_list <- lapply(combodt_samp_sigma_mu, function (x) readRDS(paste(path_to_input,x,sep = "")))
+}
+
+if(monitor_sigma_theta == "yes"){
+combodt_samp_sigma_theta <- list.files(path = path_to_input, pattern = paste('mcmc.out_', models, 'BHMFA_sigma_theta_(simu\\d+).Rdata$', sep = ""))
+combodt_samp_sigma_theta_list <- lapply(combodt_samp_sigma_theta, function (x) readRDS(paste(path_to_input,x,sep = "")))
+}
+
+mcmc.out.WAIC <- list.files(path = path_to_input, pattern = paste('mcmc.out_', models, 'BHMFA_WAIC_(simu\\d+).Rdata$', sep = ""))
+mcmc.out.WAIC_list <- lapply(mcmc.out.WAIC, function (x) readRDS(paste(path_to_input,x,sep = "")))
+
+TrueVals <- list.files(path = path_to_input, pattern = 'TrueVals_(simu\\d+).Rdata$')
+TrueVals_list <- lapply(TrueVals, function (x) readRDS(paste(path_to_input,x,sep = "")))
+
+NIMBLE_Setup <- list.files(path = path_to_input, pattern = 'NIMBLE_Setup_(simu\\d+).Rdata$')
+NIMBLE_Setup_list <- lapply(NIMBLE_Setup, function (x) readRDS(paste(path_to_input,x,sep = "")))
+
+neff_sim <- length(combodt_samp_N_list) # number of finally ran through simulations
+
+print(paste("The number of simulations that ran through is ", neff_sim, ".", sep = ""))
+
+### Find which simulation runs through ###
+simu_ran_through <- c()
+for(task_id in 1:nsim){
+  which_ran_through <- str_extract_all(TrueVals[task_id],"\\(?[0-9]+\\)?")
+  simu_ran_through <- c(simu_ran_through,which_ran_through)
+}
+simu_ran_through_raw_order <- as.numeric(unlist(simu_ran_through))
+## Sort the simulation indices
+simu_ran_through_sort <- sort(as.numeric(do.call(c,simu_ran_through)))
+
+## If NIMBLE_Setup exist
+if(!identical(NIMBLE_Setup, character(0))){
+  print(paste("Number of MCMC samples saved within a simulation is "
+, NIMBLE_Setup_list[[1]]$nsamples, ".", sep = ""))
+  print(paste("The number of chains is "
+, NIMBLE_Setup_list[[1]]$nchains, ".", sep = ""))
+  print(paste("The number of iteration is "
+, NIMBLE_Setup_list[[1]]$niter, ".", sep = ""))
+      print(paste("Burnin period is "
+, NIMBLE_Setup_list[[1]]$nburnin, ".", sep = ""))
+    print(paste("Thining by "
+, NIMBLE_Setup_list[[1]]$nthin, ".", sep = ""))
+}
+
+```
+
+## GR diagnosis check
+
+One of approaches to monitoring the convergence of a MCMC sampler is to think about what we might expect when a chain has “converged”. If we were to start multiple parallel chains in many different starting values, the theory claims that they should all eventually converge to the stationary distribution. So after some amount of time, it should be impossible to distinguish between the multiple chains. They should all “look” like the stationary distribution. One way to assess this is to compare the variation between chains to the variation within the chains. If all the chains are “the same”, then the between chain variation should be close to zero.
+
+Frequency of each parameter that got failed in GR.diagnosis check:
+
+```{r GR check}
+## Check convergence
+GR.diag_Check_ls <- list()
+for (i in 1:neff_sim){
+GR.diag <- gelman.diag(samples_Mod_list[[i]], multivariate = FALSE)
+
+if(fixedFirstElementInAlpha == "yes"){
+  which_fixed_alpha_upper <- which(names(GR.diag$psrf[,"Point est."]) == "loading_mat_upper_tri[1, 1]")
+  GR.diag_PE <- GR.diag$psrf[,"Point est."][-which_fixed_alpha_upper]
+}else{GR.diag_PE <- GR.diag$psrf[,"Point est."]}
+
+Converge_GR.diag <- all(GR.diag_PE <= 1.1) 
+Converge_Issue_GR.diag <- names(which(GR.diag$psrf[,"Point est."] > 1.1))
+
+if(Converge_GR.diag){
+  GR.diag_Check <- data.frame(If_Converge_GR.diag =  TRUE,
+                              Which_Converge_Issue_GR.diag = "NONE")
+}else{
+  GR.diag_Check <- data.frame(If_Converge_GR.diag =  rep(FALSE, length(Converge_Issue_GR.diag)),
+                              Which_Converge_Issue_GR.diag = Converge_Issue_GR.diag)
+}
+GR.diag_Check_ls[[i]] <- GR.diag_Check
+}
+
+GR.diag_Check_dt <- do.call(rbind, GR.diag_Check_ls)
+## Frequency of each parameter that got failed in GR.diagnosis check
+table(GR.diag_Check_dt$Which_Converge_Issue_GR.diag)
+
+```
+
+## Rhat
+
+```{r Rhat}
+
+## Plot Rhat
+par(mfrow=c(1,select_size))
+ICAR_ggmcmc <- ggs(samples_Mod_list[[random_show_index]]) 
+if(models == "Homo"){
+ICAR_ggmcmc %>% filter(Parameter == c("N", 
+                                      paste0("mu_j[", 1:G, "]"),
+                                      # paste0("loading_mat_upper_tri[",1:J,", 1","]"),
+                                      paste0("prev_g[", 1:G, "]"),
+                                      "sigma_theta")) %>% 
+  ggs_Rhat() + xlab("R_hat") + theme_bw() + theme(text = element_text(size = 16))
+}
+if(models == "Ind"){
+  expand_jg <- expand.grid(1:J, 1:G)
+  ICAR_ggmcmc %>% filter(Parameter == c("N", 
+                                        paste0("mu_jg[", expand_jg$Var1, ", ",expand_jg$Var2, "]"),
+                                        paste0("loading_mat_upper_tri[",1:J,", 1","]"),
+                                        paste0("prev_g[", 1:G, "]"),
+                                        "sigma_theta")) %>% 
+    ggs_Rhat() + xlab("R_hat") + theme_bw() + theme(text = element_text(size = 16))  
+}
+if(models == "corr"){
+    expand_jg <- expand.grid(1:J, 1:G)
+  ICAR_ggmcmc %>% filter(Parameter == c("N", 
+                                        paste0("mu_jg[", expand_jg$Var1, ", ",expand_jg$Var2, "]"),
+                                        paste0("loading_mat_upper_tri[",1:J,", 1","]"),
+                                        paste0("prev_g[", 1:G, "]"),
+                                        "sigma_theta","sigma_mu")) %>% 
+    ggs_Rhat() + xlab("R_hat") + theme_bw() + theme(text = element_text(size = 16))  
+}
+
+par(mfrow=c(1,1))
+
+```
+
+
+## MCMC pair-correlation comparison
+
+```{r pairmcmc}
+## mcmc_pair correlation/collinearity ##
+# It shows univariate histograms and bivariate scatter plots for selected parameters 
+# and is especially useful in identifying collinearity between variables 
+if(models != "Homo"){
+mcmc_pairs(samples_Mod_list[[random_show_index]],  pars = c("N","prev_g[1]","prev_g[2]","prev_g[3]","prev_g[4]"),
+           off_diag_args = list(size = 0.75))
+mcmc_pairs(samples_Mod_list[[random_show_index]],  pars = c("N","prev_g[1]","prev_g[2]","prev_g[3]","prev_g[4]", "mu_jg[1, 1]", "mu_jg[2, 1]", "mu_jg[3, 1]"),
+           off_diag_args = list(size = 0.75))
+if(models == "Homo"){
+  mcmc_pairs(samples_Mod_list[[random_show_index]],  pars = c("mu_j[1]","mu_j[2]","mu_j[3]"),
+             off_diag_args = list(size = 0.75))
+}else{
+  mcmc_pairs(samples_Mod_list[[random_show_index]],  pars = c("mu_jg[1, 1]","mu_jg[1, 2]","mu_jg[1, 3]" ,"mu_jg[1, 4]", "mu_jg[2, 1]","mu_jg[2, 2]","mu_jg[2, 3]" ,"mu_jg[2, 4]"),
+             off_diag_args = list(size = 0.75))
+  mcmc_pairs(samples_Mod_list[[random_show_index]],  pars = c("mu_jg[2, 1]","mu_jg[2, 2]","mu_jg[2, 3]" ,"mu_jg[2, 4]", "mu_jg[3, 1]","mu_jg[3, 2]","mu_jg[3, 3]" ,"mu_jg[3, 4]"),
+             off_diag_args = list(size = 0.75))
+}
+
+} # not homo models
+```
+
+## Parameters of interests
+
+### Total N target size
+
+The reasons that trace plot are not useful becase: 
+
+1. such visual inspection is ‘notoriously unreliable’ (A. Gelman, Carlin, et al. 2013, 285)
+2. it cannot scale to many parameters
+
+Trace plots may be useful for diagnosing convergence problems after $\hat{R}$ or effective sample size indicates problems. Some possible issues to check in these plots are
+
+1. multimodality (the traceplot jumps between different distributions)
+2. wide posterior tails (the traceplot shows regions where the sampler will reach and have difficulty returning to the main distribution)
+
+
+```{r TotalNtarget}
+###################
+## Target size N ##
+###################
+
+## Autocorrelation ##
+par(mfrow=c(2,2))
+for(i in random_show_index){
+  for(chain_i in 1:NIMBLE_Setup_list[[i]]$nchains)
+  acf(combodt_samp_N_list[[i]]$Ntarget[which(combodt_samp_N_list[[i]]$Chains==chain_i)])
+}
+par(mfrow=c(1,1))
+
+## Mix trace plots - check chains convergence##
+color_scheme_set("mix-blue-red")
+mcmc_trace(samples_Mod_list[[random_show_index]], pars = c("N"))  +
+  labs (x='Iteration',y='N value',title='Total target population (N)') 
+
+# Compute mean across MCMC samples first, then compute summary stats
+mean_est_vec <- c()
+truevalue_vec <- c()
+obsvalue_vec <- c()
+for (i in 1:neff_sim){
+  mean_est_i <- mean(combodt_samp_N_list[[i]]$Ntarget)
+  truevalue_i <-  TrueVals_list[[i]]$TotalN_target
+  obsvalue_i <- TrueVals_list[[i]]$TotalN_obs
+  mean_est_vec <- c(mean_est_vec, mean_est_i)
+  truevalue_vec <- c(truevalue_vec, truevalue_i)
+  obsvalue_vec <- c(obsvalue_vec, obsvalue_i)
+}
+## MSE,RMSE,MAE,Mean Relative Bias, SD Relative Bias, Qt2.5 Rel.Bias, Qt97.5.Rel.Bias, T-tests, Bayesian P-value ##
+Comp.Bias.RMSE.MAE_total_N <- Comp.Bias.RMSE.MAE.vec(est = mean_est_vec, truevalue = truevalue_vec)
+Comp.Bias.RMSE.MAE_total_N
+
+## Plot the true versus posterior ##
+xlimit_min <- min(c(range(mean_est_vec)[1], range(truevalue_vec)[1])) - 100
+xlimit_max <- max(c(range(mean_est_vec)[2], range(truevalue_vec)[2])) + 100
+plot_postNtarget(samples = mean_est_vec, TotalN_target = truevalue_vec, TotalN_obs = mean(obsvalue_vec), 
+                 xlimit = c(xlimit_min, xlimit_max), names_of_chain =  "Combined")
+
+```
+
+### Group-specific prevalence
+
+```{r prev_g}
+
+###############################
+## Group-Specific Prevalence ##
+###############################
+
+## Mix trace plots - check chains convergence ##
+color_scheme_set("mix-blue-red")
+par(mfrow=c(2,2))
+pars_prev_g <- sprintf("prev_g[%d]", 1:G)
+mcmc_trace(samples_Mod_list[[random_show_index]], pars = pars_prev_g) + 
+  labs (x='Iteration',y='Group specific prevalence value',title= paste('Group specific prevalence', '(g = 1:', G,')', sep = ""))  
+par(mfrow=c(1,1))
+
+# Compute mean across MCMC samples first, then compute summary stats
+mean_est_ls <- list()
+truevalue_ls <- list()
+for (i in 1:neff_sim){
+  mean_est_i <- colMeans(combodt_samp_prev_list[[i]][,2:(G+1)])
+  truevalue_i <-  TrueVals_list[[i]]$Prev
+  mean_est_ls[[i]] <- mean_est_i
+  truevalue_ls[[i]] <- truevalue_i
+}
+mean_est_dt <- do.call(rbind,mean_est_ls)
+truevalue_dt <- do.call(rbind,truevalue_ls)
+
+## MSE,RMSE,MAE,Mean Relative Bias, SD Relative Bias, Qt2.5 Rel.Bias, Qt97.5.Rel.Bias, T-tests, Bayesian P-value ##
+Comp.Bias.RMSE.MAE_grp_prev <- data.frame(matrix(NA, nrow = G, ncol = 10))
+for(g in 1:G){
+res_g <- Comp.Bias.RMSE.MAE.vec(est = mean_est_dt[,g], truevalue = truevalue_dt[,g])
+Comp.Bias.RMSE.MAE_grp_prev[g,] <- res_g
+}
+colnames(Comp.Bias.RMSE.MAE_grp_prev) <- names(res_g)
+rownames(Comp.Bias.RMSE.MAE_grp_prev) <- colnames(truevalue_dt)
+Comp.Bias.RMSE.MAE_grp_prev
+
+## Plot the posterior versus true ##
+plot_prev(G = G, samples = mean_est_dt, truevalue = unique(truevalue_dt), names_of_chain = "Combined", names_of_g = rownames(Comp.Bias.RMSE.MAE_grp_prev))
+
+## Visualize posterior in boxplot
+id <- seq(1:nrow(mean_est_dt))
+mean_est_dt <- data.frame( id = id,
+                          mean_est_dt)
+mean_est_dt_long <- gather(mean_est_dt, Groups, Prevalence, effprev_g1:effprev_g4, factor_key=TRUE)
+mean_est_dt_long$Subgroup <- substr(mean_est_dt_long$Groups,start = 9, stop = 10)
+
+# effprev boxplot
+ggplot(mean_est_dt_long, aes(x=Subgroup, y=Prevalence)) + 
+  geom_boxplot() +
+  xlab("Subgroups") + 
+  ylab(paste("Grp specific prev for ", models, "BHMFA", sep = "")) +
+  guides(color=guide_legend(title="Subgroup")) +
+  # scale_x_discrete(labels=c('White \n(Non-Hispanic)', 'Black \n(Non-Hispanic)', 'Others \n(Non-Hispanic)', 'Hispanic')) +
+  theme_bw() + 
+  theme(text = element_text(size = 16)) 
+
+```
+
+### Lists effects 
+
+```{r mu_jg}
+############################
+## List effect mu_jg/mu_j ##
+############################
+
+if(models != "Homo"){
+## Mix trace plots - check chains convergence##
+color_scheme_set("mix-blue-red")
+if(J == 3 & G == 4) {
+  if(models == "Homo"){
+    pars_mu <- sprintf("mu_j[%d]", 1:J)
+    par(mfrow=c(2,2))
+    mcmc_trace(samples_Mod_list[[random_show_index]], pars = pars_mu) +
+               labs (x='Iteration',y='mu_J value',title=paste('Traceplot - list effects mu_j (j=1:',J, ')', sep = "")) 
+    par(mfrow=c(1,1))
+  }else{
+    pars_mu_1 <- sprintf("mu_jg[1, %d]",1:G)
+    plot(mcmc_trace(samples_Mod_list[[random_show_index]], pars = pars_mu_1) +
+               labs (x='Iteration',y='mu_1 value',title='Traceplot - list effects mu_j (j=1)'))
+    pars_mu_2 <- sprintf("mu_jg[2, %d]",1:G)
+    plot(mcmc_trace(samples_Mod_list[[random_show_index]], pars = pars_mu_2) + 
+               labs (x='Iteration',y='mu_2 value',title='Traceplot - list effects mu_j (j=2)'))
+    pars_mu_3 <- sprintf("mu_jg[3, %d]",1:G)
+    plot(mcmc_trace(samples_Mod_list[[random_show_index]], pars = pars_mu_3) + 
+               labs (x='Iteration',y='mu_3 value',title='Traceplot - list effects mu_j (j=3)'))     
+  }
+}
+par(mfrow=c(1,1))
+
+# Compute mean across MCMC samples first, then compute summary stats
+mean_est_ls <- list()
+truevalue_ls <- list()
+for (i in 1:neff_sim){
+  mean_est_i <- colMeans(combodt_samp_mu_jg_list[[i]][,2:(J*G+1)])
+  if(models != "Homo"){
+  truevalue_i <-  TrueVals_list[[i]]$Empirical_mu_jg_mat
+  }
+  ## re-order the names of truevalue column to match the estimated values
+  truevalue_i <- data.frame(rowID = rep(1,nrow(truevalue_i)),
+                            truevalue_i)
+  truevalue_row_i <- as.data.table(truevalue_i)[, dcast(.SD, rowID ~ rowid(rowID), value.var = names(truevalue_i)[-1])]
+  truevalue_row_i <- as.data.frame(truevalue_row_i[,2:ncol(truevalue_row_i)])
+  colnames_jg <- expand.grid(1:G,1:J)
+  colnames(colnames_jg) <- c("G","J")
+  colnames_jg <- colnames_jg[,c("J","G")]
+  colnames(truevalue_row_i) <- paste("mu_j",colnames_jg$J, "_g", colnames_jg$G, sep="")
+  truevalue_row_i<-truevalue_row_i[names(mean_est_i)]
+  
+  ## save them to list
+  mean_est_ls[[i]] <- mean_est_i
+  truevalue_ls[[i]] <- truevalue_row_i
+  
+}
+mean_est_dt <- do.call(rbind,mean_est_ls)
+truevalue_dt <- do.call(rbind,truevalue_ls)
+
+
+## MSE,RMSE,MAE,Mean Relative Bias, SD Relative Bias, Qt2.5 Rel.Bias, Qt97.5.Rel.Bias, T-tests, Bayesian P-value ##
+if(models == "Homo"){
+  Comp.Bias.RMSE.MAE_mu_j<- data.frame(matrix(NA, nrow = J, ncol = 10))
+  for(j in 1:J){
+    res_j <- Comp.Bias.RMSE.MAE.vec(est = mean_est_dt[,j], truevalue = truevalue_dt[,j])
+    Comp.Bias.RMSE.MAE_mu_j[j,] <- res_j
+  }
+  colnames(Comp.Bias.RMSE.MAE_mu_j) <- names(res_j)
+  rownames(Comp.Bias.RMSE.MAE_mu_j) <- colnames(truevalue_dt)
+  Comp.Bias.RMSE.MAE_mu_j <- round(Comp.Bias.RMSE.MAE_mu_j, digits = 4)
+  Comp.Bias.RMSE.MAE_mu_j
+}else{
+  Comp.Bias.RMSE.MAE_mu_jg<- data.frame(matrix(NA, nrow = J*G, ncol = 10))
+  for(jg in 1:(J*G)){
+    res_jg <- Comp.Bias.RMSE.MAE.vec(est = mean_est_dt[,jg], truevalue = truevalue_dt[,jg])
+    Comp.Bias.RMSE.MAE_mu_jg[jg,] <- res_jg
+  }
+  colnames(Comp.Bias.RMSE.MAE_mu_jg) <- names(res_jg)
+  rownames(Comp.Bias.RMSE.MAE_mu_jg) <- colnames(truevalue_dt)
+  Comp.Bias.RMSE.MAE_mu_jg <- round(Comp.Bias.RMSE.MAE_mu_jg, digits = 4)
+  Comp.Bias.RMSE.MAE_mu_jg
+}
+
+## Visualize the posterior in boxplot
+## Boxplot of posterior
+## Boxplot of posterior
+if(models != "Homo"){
+id <- seq(1:nrow(mean_est_dt))
+mean_est_dt <- data.frame( id = id,
+                          mean_est_dt)
+mean_est_dt_long <- gather(mean_est_dt, Groups, mu_jg, mu_j1_g1:mu_j3_g4, factor_key=TRUE)
+mean_est_dt_long$List <- substr(mean_est_dt_long$Groups,start = 5, stop = 5)
+mean_est_dt_long$Subgroup <- substr(mean_est_dt_long$Groups,start = 7, stop = 8)
+
+# mu_jg boxplot
+ggplot(mean_est_dt_long, aes(x=Subgroup, y=mu_jg, fill = List)) + 
+  geom_boxplot() +
+  xlab("Subgroups") + 
+  ylab(paste("mu_jg for ", models, "BHMFA", sep = "")) +
+  guides(color=guide_legend(title="Subgroup")) +
+  # scale_x_discrete(labels=c('White \n(Non-Hispanic)', 'Black \n(Non-Hispanic)', 'Others \n(Non-Hispanic)', 'Hispanic')) +
+  theme_bw() + 
+  theme(text = element_text(size = 16))  
+}
+
+} # not homo model
+
+```
+
+
+### Variance parameter of the list effect ($\sigma_{\mu}$)
+
+```{r Sigma_mu, eval = FALSE}
+#######################
+## Variance sigma_mu ##
+#######################
+
+if(models == "corr"){
+## Autocorrelation ##
+par(mfrow=c(2,2))
+for(i in random_show_index){
+  for(chain_i in 1:NIMBLE_Setup_list[[i]]$nchains)
+  acf(combodt_samp_sigma_mu_list[[i]]$sigma_mu[which(combodt_samp_sigma_mu_list[[i]]$Chains==chain_i)])
+}
+par(mfrow=c(1,1))
+
+## Mix trace plots - check chains convergence##
+color_scheme_set("mix-blue-red")
+mcmc_trace(samples_Mod_list[[random_show_index]], pars = c("sigma_mu"))  +
+  labs (x='Iteration',y='N value',title='SD of mu')  
+
+# Compute mean across MCMC samples first, then compute summary stats
+mean_est_vec <- c()
+truevalue_vec <- c()
+for (i in 1:neff_sim){
+  mean_est_i <- mean(combodt_samp_sigma_mu_list[[i]]$sigma_mu)
+  truevalue_i <-  sd(colMeans(TrueVals_list[[i]]$Theoretical_mu_jg_mat)) # Not use empirical because it contains alpha*theta component
+  mean_est_vec <- c(mean_est_vec, mean_est_i)
+  truevalue_vec <- c(truevalue_vec, truevalue_i)
+}
+
+## MSE,RMSE,MAE,Mean Relative Bias, SD Relative Bias, Qt2.5 Rel.Bias, Qt97.5.Rel.Bias, T-tests, Bayesian P-value ##
+Comp.Bias.RMSE.MAE_sigma_mu <- Comp.Bias.RMSE.MAE.vec(est = mean_est_vec, truevalue = truevalue_vec)
+Comp.Bias.RMSE.MAE_sigma_mu
+
+## Plot the true versus posterior ##
+xlimit_min <- min(c(range(mean_est_vec)[1]), c(range(truevalue_vec)[1])) - 0.05
+xlimit_max <- max(c(range(mean_est_vec)[2]), c(range(truevalue_vec)[2])) + 0.05
+plot_postSigma_mu(samples = mean_est_vec, TrueVals = truevalue_vec, xlimit = c(xlimit_min, xlimit_max), names_of_chain =  "Combined", model = models)
+}
+
+if(models == "Ind"){
+# If fixed effect or homoegeneoous  
+# Compute the SD of mean across MCMC samples 
+mean_est_ls <- list()
+truevalue_vec <- c()
+for (i in 1:neff_sim){
+  mean_est_i <- colMeans(combodt_samp_mu_jg_list[[i]][,2:(J*G+1)])
+  if(models != "Homo"){
+  truevalue_i <-  sd(colMeans(TrueVals_list[[i]]$Theoretical_mu_jg_mat)) # Not use empirical because it contains alpha*theta component
+  }
+  ## save them to list
+  mean_est_ls[[i]] <- mean_est_i
+  truevalue_vec <- c(truevalue_vec, truevalue_i)
+  
+}
+mean_est_dt <- do.call(rbind,mean_est_ls)
+
+est_sigma_mu <- apply(mean_est_dt, 1, 
+                      FUN = function(x) 
+                                       { mean_est_sigma_mu_dt <- data.frame(id = 1,x)
+                                        mean_est_sigma_mu_dt$List <- substr(rownames(mean_est_sigma_mu_dt),start = 5, stop = 5)
+                                        mean_est_sigma_mu_dt$Subgroup <- substr(rownames(mean_est_sigma_mu_dt),start = 7, stop = 8)
+                                        mean_est_sigma_mu_dt <- subset(mean_est_sigma_mu_dt, select = -c(id))
+                                        mean_est_sigma_mu_wide <- reshape(mean_est_sigma_mu_dt, idvar = "List", timevar = "Subgroup", direction = "wide")
+                                        est_sigma_mu <- sd(colMeans(mean_est_sigma_mu_wide[,2:ncol(mean_est_sigma_mu_wide)]))
+                                        return(est_sigma_mu)
+                      }
+                      )
+
+## Plot the true versus posterior ##
+xlimit_min <- min(c(range(est_sigma_mu)[1]), c(range(truevalue_vec)[1])) - 0.05
+xlimit_max <- max(c(range(est_sigma_mu)[2]), c(range(truevalue_vec)[2])) + 0.05
+plot_postSigma_mu(samples = est_sigma_mu, TrueVals = truevalue_vec, xlimit = c(xlimit_min, xlimit_max), names_of_chain =  "Combined", model = models)
+
+} # end of Fixed Effect Model
+
+```
+
+### Factor loading matrix
+
+```{r factor loadings}
+
+#############################
+## Factor Loadings alpha_j ##
+#############################
+
+## Mix trace plots - check chains convergence##
+color_scheme_set("mix-blue-red")
+par(mfrow=c(1,3))
+pars_loadings <- sprintf("loading_mat_upper_tri[%d, 1]", 1:J)
+mcmc_trace(samples_Mod_list[[random_show_index]], pars = pars_loadings)  +
+  labs (x='Iteration',y='factor loading (alpha) value',title=paste('Traceplot - factor loading alpha_j (j=1:',J, ')', sep = ""))  
+par(mfrow=c(1,1))
+
+# Compute mean across MCMC samples first, then compute summary stats
+mean_est_ls <- list()
+truevalue_ls <- list()
+for (i in 1:neff_sim){
+  mean_est_i <- colMeans(combodt_samp_loadings_list[[i]][,2:(J+1)]) # dim = nsamples*J
+  truevalue_i <-  t(TrueVals_list[[i]]$alpha) # dim = 1*J 
+  mean_est_ls[[i]] <- mean_est_i
+  truevalue_ls[[i]] <- truevalue_i
+}
+mean_est_dt <- do.call(rbind,mean_est_ls)
+truevalue_dt <- do.call(rbind,truevalue_ls)
+
+## MSE,RMSE,MAE,Mean Relative Bias, SD Relative Bias, Qt2.5 Rel.Bias, Qt97.5.Rel.Bias, T-tests, Bayesian P-value ##
+Comp.Bias.RMSE.MAE_loading_j<- data.frame(matrix(NA, nrow = J, ncol = 10))
+for(j in 1:J){
+  res_j <- Comp.Bias.RMSE.MAE.vec(est = mean_est_dt[,j], truevalue = truevalue_dt[,j])
+  Comp.Bias.RMSE.MAE_loading_j[j,] <- res_j
+}
+colnames(Comp.Bias.RMSE.MAE_loading_j) <- names(res_j)
+rownames(Comp.Bias.RMSE.MAE_loading_j) <- colnames(truevalue_dt)
+Comp.Bias.RMSE.MAE_loading_j <- round(Comp.Bias.RMSE.MAE_loading_j, digits = 4)
+Comp.Bias.RMSE.MAE_loading_j
+
+```
+
+### Variance parameter of the latent factor ($\sigma_{\theta}$)
+
+```{r Sigma_theta, eval = TRUE}
+#######################
+## Variance sigma_theta ##
+#######################
+if(monitor_sigma_theta == "yes"){
+## Autocorrelation ##
+par(mfrow=c(2,2))
+for(i in random_show_index){
+  for(chain_i in 1:NIMBLE_Setup_list[[i]]$nchains)
+  acf(combodt_samp_sigma_theta_list[[i]]$sigma_theta[which(combodt_samp_sigma_theta_list[[i]]$Chains==chain_i)])
+}
+par(mfrow=c(1,1))
+
+## Mix trace plots - check chains convergence##
+color_scheme_set("mix-blue-red")
+mcmc_trace(samples_Mod_list[[random_show_index]], pars = c("sigma_theta"))  +
+  labs (x='Iteration',y='N value',title='SD of theta')  
+
+# Compute mean across MCMC samples first, then compute summary stats
+mean_est_vec <- c()
+for (i in 1:neff_sim){
+  mean_est_i <- mean(combodt_samp_sigma_theta_list[[i]]$sigma_theta)
+  mean_est_vec <- c(mean_est_vec, mean_est_i)
+}
+truevalue_vec <- BasicSetup$theta_sd
+
+## MSE,RMSE,MAE,Mean Relative Bias, SD Relative Bias, Qt2.5 Rel.Bias, Qt97.5.Rel.Bias, T-tests, Bayesian P-value ##
+Comp.Bias.RMSE.MAE_sigma_theta <- Comp.Bias.RMSE.MAE.vec(est = mean_est_vec, truevalue = truevalue_vec)
+Comp.Bias.RMSE.MAE_sigma_theta
+
+## Plot the true versus posterior ##
+xlimit_min <- min(c(range(mean_est_vec)[1]), c(range(truevalue_vec)[1])) - 0.05
+xlimit_max <- max(c(range(mean_est_vec)[2]), c(range(truevalue_vec)[2])) + 0.05
+plot_postSigma_theta(samples = mean_est_vec, TrueVals = truevalue_vec, xlimit = c(xlimit_min, xlimit_max), names_of_chain =  "Combined")
+}
+
+```
+
+
+## WAIC 
+
+```{r waic}
+samp_WAIC_vec <- sapply(mcmc.out.WAIC_list, FUN = function(x){WAIC <- x$WAIC
+return(WAIC)
+})
+samp_WAIC_mean <- round(mean(samp_WAIC_vec), 3)
+samp_WAIC_median <- round(median(samp_WAIC_vec), 3)
+
+paste("The mean of WAIC is ", samp_WAIC_mean, ".", sep = "")
+paste("The median of WAIC is ", samp_WAIC_median, ".", sep = "")
+
+```
